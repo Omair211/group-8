@@ -1,10 +1,9 @@
 from fastapi import FastAPI, BackgroundTasks
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from motor.motor_asyncio import AsyncIOMotorClient
-import requests
-from bs4 import BeautifulSoup
+from scraper import run
 import uuid
-
+from services import create_driver
 app = FastAPI()
 
 # MongoDB Connection
@@ -14,7 +13,17 @@ db = client["pokemon_db"]
 queue_collection = db["queue"]
 pokemon_collection = db["pokemon_data"]
 
+# Pydantic Model for Queue Items
 class QueueItem(BaseModel):
+    url: str
+
+# Pydantic Model for Pokémon Data
+class PokemonData(BaseModel):
+    id: str = Field(..., alias="_id")
+    name: str
+    price: str
+    rarity: str
+    release_date: str
     url: str
 
 @app.post("/queue")
@@ -31,7 +40,7 @@ async def check_status(item_id: str):
         return {"status": item["status"]}
     return {"error": "Item not found"}
 
-@app.get("/pokemon/{item_id}")
+@app.get("/pokemon/{item_id}", response_model=PokemonData)
 async def get_pokemon_data(item_id: str):
     item = await pokemon_collection.find_one({"_id": item_id})
     if item:
@@ -40,15 +49,8 @@ async def get_pokemon_data(item_id: str):
 
 def scrape_pokemon_data(item_id, url):
     """Scrapes data from TCGplayer and updates MongoDB."""
-    response = requests.get(url)
-    soup = BeautifulSoup(response.text, "html.parser")
+    driver = create_driver()
+    output = run(url, driver)  # Example: {"name": "Pikachu VMAX", "price": "$10.50", "rarity": "Ultra Rare", "release_date": "2021-09-10"}
 
-    # Extract sample data (Modify selectors based on TCGplayer's structure)
-    name = soup.find("h1").text if soup.find("h1") else "Unknown"
-    price = soup.find(class_="price-class").text if soup.find(class_="price-class") else "N/A"
-
-    data = {"_id": item_id, "name": name, "price": price, "url": url}
-
-    # Update status in queue and insert data into pokemon collection
     queue_collection.update_one({"_id": item_id}, {"$set": {"status": "completed"}})
-    pokemon_collection.insert_one(data)
+    pokemon_collection.insert_one({"_id": item_id, **output, "url": url})
