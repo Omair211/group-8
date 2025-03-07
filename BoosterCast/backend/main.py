@@ -47,10 +47,13 @@ async def get_pokemon_data(item_id: str):
         return item
     return {"error": "Data not found"}
 
-def scrape_pokemon_data(item_id, url):
+async def scrape_pokemon_data(item_id, url):
     """Scrapes data from TCGplayer and updates MongoDB."""
+    
+    # Mark item as completed in the queue
+    await queue_collection.update_one({"_id": item_id}, {"$set": {"status": "completed"}})
     driver = create_driver()
-    output = run(url, driver)  # Example: {"name": "Pikachu VMAX", "price": "$10.50", "rarity": "Ultra Rare", "release_date": "2021-09-10"}
+    output = run(url, driver, 20)
 
     queue_collection.update_one({"_id": item_id}, {"$set": {"status": "completed"}})
-    pokemon_collection.insert_one({"_id": item_id, **output, "url": url})
+    pokemon_collection.insert_one({"_id": item_id, "output": output, "url": url})

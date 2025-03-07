@@ -17,25 +17,40 @@ from file_operations_helper import write_to_json_file
 TEST_CASE = "https://www.tcgplayer.com/product/593294/pokemon-sv-prismatic-evolutions-prismatic-evolutions-booster-pack?page=1&Language=all"
 
 
-def run(url, driver):
-    output = get_product_market_price_history(url, driver)
+def run(url, driver, scrape_duration=60):
+    output = get_product_market_price_history(url, driver, scrape_duration)
     driver.quit()
     return output
 
-def get_product_market_price_history(url, driver):
+def get_product_market_price_history(url, driver, scrape_duration):
     results = []
     driver.get(url)
     product_title = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "h1.product-details__name")))
-
+    product_id = extract_product_id(url)
+    chart_table = []
+    image_url = None
     close_cookie_button(driver)
+    title = driver.find_element(By.CSS_SELECTOR, "h1.product-details__name").text
+    text = driver.find_element(By.CSS_SELECTOR, "ul.product__item-details__attributes").text
+    category_container = driver.find_element(By.CSS_SELECTOR, "div.product-details__name__sub-header").text
+    if product_id:
+        image_url = f"https://tcgplayer-cdn.tcgplayer.com/product/{product_id}_in_200x200.jpg"
+        print("Image URL:", image_url)
+    chart = driver.find_element(By.CSS_SELECTOR, "div.chart-container")
+    table = chart.find_elements(By.TAG_NAME, "td")
+    for td in table:
+        chart_table.append(td.get_attribute("textContent").strip())
+
     market_history_data_toggle = driver.find_element(By.CSS_SELECTOR, "div.modal__activator")
     market_history_data_toggle.click()
     
     history_snapshot_element = driver.find_element(By.CSS_SELECTOR, "section.sales-history-snapshot")
     scroll_inside_element(driver, history_snapshot_element)
 
-    output = click_until_gone(driver, "div.sales-history-snapshot__load-more", By.TAG_NAME, "button", results)
-    return output
+    iterations = scrape_duration // 2
+    output = click_until_gone(driver, "div.sales-history-snapshot__load-more", By.TAG_NAME, "button", results, iterations)
+    
+    return {"title": title, "text": text, "img": image_url, "chart_data": chart_table, "category": category_container, "output":output}
 
 def close_cookie_button(driver):
     allow_button = driver.find_element(By.CSS_SELECTOR, "span.allow-button")
@@ -43,9 +58,9 @@ def close_cookie_button(driver):
 
 import random
 
-def click_until_gone(driver, container_selector, by, selector, results):
-    iteration = 1
-    while True:
+def click_until_gone(driver, container_selector, by, selector, results, max_iterations):
+    iteration = 0
+    while iteration < max_iterations:
         try:
             container = driver.find_element(By.CSS_SELECTOR, container_selector)
         except Exception as e:
@@ -63,7 +78,7 @@ def click_until_gone(driver, container_selector, by, selector, results):
 
         try:
             # ✅ Simulate human-like behavior before clicking
-            time.sleep(0.5)  # Randomized wait
+            # time.sleep(0.5)  # Randomized wait
             ActionChains(driver).move_to_element(element).pause(random.uniform(0.5, 1)).click().perform()
             print(f"[DEBUG] Click executed.")
         except Exception as e:
@@ -71,7 +86,7 @@ def click_until_gone(driver, container_selector, by, selector, results):
             break
 
         # ✅ Wait longer to mimic a real user waiting for page updates
-        time.sleep(random.uniform(0.5, 1))
+        # time.sleep(random.uniform(0.5, 1))
 
         rows = gather_data(driver, "tbody.latest-sales-table__tbody")
         results = merge_two_lists(results, rows)
@@ -153,3 +168,10 @@ def scroll_inside_element(driver, element, pause_time=2):
         time.sleep(pause_time)
     except Exception as e:
         print(f"[DEBUG] Error scrolling inside element: {e}")
+
+
+import re
+
+def extract_product_id(url):
+    match = re.search(r'/product/(\d+)/', url)
+    return match.group(1) if match else None
