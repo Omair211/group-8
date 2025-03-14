@@ -1,37 +1,27 @@
 import { useState } from "react";
+import axios from "axios";
 import React from "react";
 
 const AddItemForm = ({ setQueueId }) => {
   const [url, setUrl] = useState("");
-  const [error, setError] = useState("");
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!url.startsWith("https://www.tcgplayer.com/")) {
-      setError("Please enter a valid TCGplayer link.");
-      return;
-    }
-    setError("");
-    const fakeQueueId = Math.random().toString(36).substring(7);
-    setQueueId(fakeQueueId);
-    setUrl("");
+    const response = await axios.post("http://localhost:8000/queue", { url });
+    setQueueId(response.data.id);
   };
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+    <form onSubmit={handleSubmit} className="p-4 border rounded-lg">
       <input
         type="text"
         value={url}
         onChange={(e) => setUrl(e.target.value)}
-        placeholder="Enter TCGplayer link..."
-        className="p-3 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+        placeholder="Enter TCGplayer link"
+        className="p-2 border rounded"
       />
-      {error && <p className="text-red-500 text-sm">{error}</p>}
-      <button
-        type="submit"
-        className="bg-blue-500 text-white p-2 rounded-md hover:bg-blue-600 transition"
-      >
-        Add Item
+      <button type="submit" className="ml-2 p-2 bg-blue-500 text-white rounded">
+        Add
       </button>
     </form>
   );
