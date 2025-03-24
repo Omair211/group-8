@@ -1,7 +1,7 @@
 import { useState } from "react";
 import React from "react";
 import AddItemForm from "./components/AddItemForm";
-
+import OpenRouterQA from "./components/OpenRouterQA";
 function App() {
   const [queueId, setQueueId] = useState(null);
 
@@ -17,6 +17,7 @@ function App() {
             Item added! Queue ID: <span className="font-semibold">{queueId}</span>
           </p>
         )}
+        <OpenRouterQA/>
       </div>
     </div>
   );
