@@ -6,6 +6,11 @@ import uuid
 from services import create_driver
 app = FastAPI()
 from typing import Optional, List
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Query
+import joblib
+import pandas as pd
+from datetime import datetime, timedelta
+
 
 # MongoDB Connection
 MONGO_URI = "mongodb://localhost:27017"
@@ -17,6 +22,104 @@ library_collection = db["library_data"]
 collection_collection = db["user_collection"]
 wishlist_collection = db["wishlist"]
 
+try:
+    forecast_model = joblib.load("pokemon_forecaster_no_quantity.pkl")
+    print("Forecasting model loaded successfully")
+    # Verify the model has the expected features
+    if not hasattr(forecast_model, 'feature_names_in_'):
+        print("Warning: Loaded model doesn't have feature names. May not work as expected.")
+except FileNotFoundError:
+    print("Forecasting model file not found. Some features will be disabled.")
+    forecast_model = None
+except Exception as e:
+    print(f"Error loading forecasting model: {e}")
+    forecast_model = None
+def add_temporal_features(df):
+    """Add temporal features to the dataset."""
+    df['date'] = pd.to_datetime(df['date'])
+    df['day_of_year'] = df['date'].dt.dayofyear
+    df['month'] = df['date'].dt.month
+    df['day_of_week'] = df['date'].dt.dayofweek
+    df['week_of_year'] = df['date'].dt.isocalendar().week
+    return df
+
+def add_lag_features(df):
+    """Add lagged price features."""
+    # Remove groupby since we're working with a single item's data
+    df['price_lag_1'] = df['price'].shift(1)
+    df['price_lag_2'] = df['price'].shift(2)
+    df['price_lag_7'] = df['price'].shift(7)
+    return df
+
+def add_differenced_features(df):
+    """Add price difference features."""
+    # Remove groupby since we're working with a single item's data
+    df['price_diff_1'] = df['price'].diff(1)  # Daily change
+    df['price_diff_7'] = df['price'].diff(7)  # Weekly change
+    df['price_pct_change_1'] = df['price'].pct_change(1)
+    return df
+
+def add_rolling_features(df):
+    """Add rolling statistics."""
+    windows = [3, 7, 14]
+    for window in windows:
+        df[f'rolling_avg_{window}'] = df['price'].rolling(window=window, min_periods=1).mean()
+        df[f'rolling_std_{window}'] = df['price'].rolling(window=window, min_periods=1).std()
+    return df
+
+
+def clean_price_data(price_data):
+    """Convert price data to consistent float format."""
+    if isinstance(price_data, str):
+        return float(price_data.replace('$', '').replace(',', ''))
+    return float(price_data)
+
+def prepare_forecast_data(historical_prices):
+    """
+    Prepare the data in the exact same way as during model training.
+    Returns a DataFrame with all expected features.
+    """
+    # Create DataFrame with date and price
+    df = pd.DataFrame(historical_prices)
+    df['date'] = pd.to_datetime(df['date'])
+    df = df.sort_values('date')
+    
+    # Add all features exactly as done during training
+    df = add_temporal_features(df)
+    df = add_lag_features(df)
+    df = add_rolling_features(df)
+    
+    # Drop rows with missing values (from lag features)
+    df = df.dropna()
+    
+    return df
+
+# Updated forecasting function
+def prepare_forecast_features(historical_data, current_date):
+    """Prepare features in the same format as the model was trained"""
+    df = pd.DataFrame(historical_data)
+    df['date'] = pd.to_datetime(df['date'])
+    
+    # Ensure we have the required columns
+    if 'price' not in df.columns:
+        raise ValueError("Historical data must contain 'price' column")
+    
+    # Add all the features your model expects
+    df = add_temporal_features(df)
+    df = add_lag_features(df)
+    df = add_rolling_features(df)
+    
+    # Get the most recent row with all features
+    latest = df.iloc[-1:].copy()
+    
+    # Ensure we have all expected features
+    required_features = forecast_model.feature_names_in_
+    missing_features = set(required_features) - set(latest.columns)
+    
+    if missing_features:
+        raise ValueError(f"Missing required features: {missing_features}")
+    
+    return latest[required_features]
 class CollectionItem(BaseModel):
   item_id: str
   title: str
@@ -61,6 +164,171 @@ async def get_sets():
   print(sets)
   return sets
 
+def parse_date_range(date_str):
+    """Parse date ranges like '12/21 to 12/23' into datetime objects"""
+    try:
+        # Extract just the start date (first part before " to ")
+        start_date_str = date_str.split(" to ")[0]
+        
+        # Add current year if not present (assuming MM/DD format)
+        if len(start_date_str.split('/')) == 2:
+            start_date_str = f"{start_date_str}/{datetime.now().year}"
+            
+        # Parse with explicit format
+        return datetime.strptime(start_date_str, "%m/%d/%Y")
+    except Exception as e:
+        print(f"Failed to parse date '{date_str}': {str(e)}")
+        return None  # or raise an exception if you prefer
+   
+@app.post("/forecast/price")
+async def forecast_price(request: ForecastRequest):
+    """Complete forecast endpoint with feature engineering and error handling"""
+    print(f"[DEBUG] Received forecast request: {request.dict()}")
+    
+    if forecast_model is None:
+        raise HTTPException(status_code=503, detail="Forecasting service unavailable")
+
+    try:
+        # Get validated request parameters
+        item_id = request.item_id
+        periods = request.periods
+        
+        print(f"[DEBUG] Processing forecast for item {item_id}")
+
+        # Fetch item data from either library or collection
+        item = await library_collection.find_one({"_id": item_id}) or \
+               await collection_collection.find_one({"item_id": item_id})
+        
+        if not item:
+            raise HTTPException(status_code=404, detail="Item not found")
+
+        # Parse historical price data
+        chart_data = item.get("chart_data", [])
+        historical_prices = []
+        
+        print("here")
+        for i in range(0, len(chart_data), 3):
+            if i + 1 >= len(chart_data):
+                break
+                
+            date_str = chart_data[i]
+            price_str = chart_data[i + 1]
+            
+            try:
+                parsed_date = parse_date_range(date_str)
+                if not parsed_date:
+                    continue
+                    
+                price = float(price_str.replace('$', '').replace(',', ''))
+                
+                historical_prices.append({
+                    'date': parsed_date,
+                    'price': price
+                })
+            except Exception as e:
+                print(f"Skipping invalid data at position {i}: {str(e)}")
+                continue
+
+        print("2")
+
+        # Validate we have enough historical data
+        if len(historical_prices) < 14:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Need at least 14 data points, got {len(historical_prices)}"
+            )
+
+        # Create DataFrame and prepare features
+        df = pd.DataFrame(historical_prices)
+        df = df.sort_values('date')
+        
+        print("here2222")
+        # Feature engineering (must match training pipeline)
+        df = add_temporal_features(df)
+        print("feature1")
+        df = add_lag_features(df)
+        print("feature2")
+        df = add_rolling_features(df)
+        print("feature3")
+        df = add_differenced_features(df)
+        print("feature4")
+        df = df.dropna()
+
+        
+        # Verify we have all required features
+        print("here22")
+        missing_features = set(forecast_model.feature_names_in_) - set(df.columns)
+        if missing_features:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Missing required features: {missing_features}"
+            )
+
+        # Generate forecasts
+        forecasts = []
+        current_features = df[forecast_model.feature_names_in_].iloc[-1:].copy()
+        
+        for _ in range(periods):
+            # Predict next price
+            next_price = forecast_model.predict(current_features)[0]
+            
+            # Create next date (monthly intervals)
+            next_date = df['date'].iloc[-1] + timedelta(days=30)
+            
+            forecasts.append({
+                'date': next_date.strftime("%b %Y"),
+                'price': round(float(next_price), 2),
+                'predicted': True
+            })
+            
+            # Update features for next prediction
+            new_row = {
+                'date': next_date,
+                'price': next_price,
+                'day_of_year': next_date.dayofyear,
+                'month': next_date.month,
+                'day_of_week': next_date.dayofweek,
+                'week_of_year': next_date.isocalendar().week,
+                'price_lag_1': df['price'].iloc[-1],
+                'price_lag_2': df['price'].iloc[-2],
+                'price_lag_7': df['price'].iloc[-7],
+                'rolling_avg_7': df['price'].iloc[-7:].mean(),
+                'rolling_std_7': df['price'].iloc[-7:].std(),
+                'price_diff_1': next_price - df['price'].iloc[-1],
+                'price_diff_7': next_price - df['price'].iloc[-7],
+                'price_pct_change_1': (next_price - df['price'].iloc[-1]) / df['price'].iloc[-1]
+            }
+            
+            # Update DataFrame for next prediction
+            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+            current_features = df[forecast_model.feature_names_in_].iloc[-1:].copy()
+
+        # Format historical data for response
+        historical_formatted = [{
+            'date': row['date'].strftime("%b %Y"),
+            'price': row['price'],
+            'predicted': False
+        } for _, row in df.iloc[:-periods].iterrows()]
+
+        return {
+            'item_id': item_id,
+            'historical_data': historical_formatted,
+            'forecast_data': forecasts,
+            'current_price': historical_prices[-1]['price'],
+            'model_version': 'v2',
+            'timestamp': datetime.utcnow().isoformat()
+        }
+
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print(f"[ERROR] Unhandled exception: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Forecasting failed: {str(e)}"
+        )    
 
 from fastapi.responses import StreamingResponse
 import csv
