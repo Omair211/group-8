@@ -41,6 +41,14 @@ const OpenRouterQA = () => {
     console.log("Card Context:", cardContext);
   },[]);
 
+  //This useEffect runs once when the component loads (because of the empty [] dependency array). 
+  // It logs three variables to the console:
+
+//collectionData
+
+//summaryData
+
+//cardContext
 
 
 
@@ -62,6 +70,18 @@ const OpenRouterQA = () => {
       const value = price * item.count;
       return `- ${item.title}: ${item.count} cards, $${price.toFixed(2)} each, total value $${value.toFixed(2)}`;
     }).join('\n');
+
+    //It creates a summary of the user's Pokémon cards with quantity,
+    //  price, and total value for each item.
+
+
+
+
+
+
+
+
+
 
     // Add current card context if available
     let currentCardContext = '';
@@ -87,6 +107,17 @@ ${cardContext.priceForecast ? `- Price Forecast: ${cardContext.priceForecast}` :
     setAnswer('');
     setQuestion('');
     
+    //It checks the question, then clears input, shows loading,
+    //  and gets the chatbot’s answer.
+
+
+
+
+
+
+
+
+
     try {
       const context = prepareContext();
       
@@ -129,7 +160,10 @@ Respond concisely and accurately based only on the data provided. If you cannot 
           'X-Title': 'PACKCast Pokémon Collection'
         }
       });
-      
+      //This uses the Deepseek free model (deepseek-r1-distill-qwen-14b:free)
+      //  from OpenRouter to answer the user's question.
+      //  It's a free AI model suitable for chatbot responses.
+
       setAnswer(response.data.choices[0].message.content);
     } catch (error) {
       console.error("Error querying OpenRouter API:", error);
@@ -139,6 +173,11 @@ Respond concisely and accurately based only on the data provided. If you cannot 
     }
   };
 
+  //It sets the chatbot’s answer from the API response.
+  //  If there’s an error, it shows a friendly error message.
+  //  Finally, it stops the loading state.
+
+  
   // Get a contextual placeholder based on whether we're viewing a card
   const getPlaceholder = () => {
     if (cardContext && summaryData.currentCard) {
