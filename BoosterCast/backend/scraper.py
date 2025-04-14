@@ -11,7 +11,6 @@ from selenium.common.exceptions import NoSuchElementException, TimeoutException,
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from list_helper import merge_two_lists
-from file_operations_helper import write_to_json_file
 
 
 TEST_CASE = "https://www.tcgplayer.com/product/593294/pokemon-sv-prismatic-evolutions-prismatic-evolutions-booster-pack?page=1&Language=all"
