@@ -452,16 +452,16 @@ const LibraryPage = () => {
           </button>
         </div>
         <div className="flex items-center space-x-1">
-  <input
+  {/* <input
     type="checkbox"
     id="semantic-search"
     checked={isSemanticSearch}
     onChange={() => setIsSemanticSearch(!isSemanticSearch)}
-    className="h-4 w-4 text-orange-500 rounded"
-  />
-  <label htmlFor="semantic-search" className="text-sm text-gray-700">
+    className="h-4 w-4 text-orange-500 rounded" */}
+  {/* /> */}
+  {/* <label htmlFor="semantic-search" className="text-sm text-gray-700">
     Semantic Search
-  </label>
+  </label> */}
 </div>
         <div className="flex flex-wrap gap-4">
           <div className="flex items-center space-x-1">
