@@ -122,6 +122,20 @@ const LibraryPage = () => {
     fetchWishlist();
   }, []);
 
+  const getLatestPriceFromChartData = (chartData) => {
+    if (!chartData || !Array.isArray(chartData) || chartData.length < 3) {
+      return 'N/A';
+    }
+    
+    // The last price is at position length-2 (since data is in date,price,volume triples)
+    const lastPriceStr = chartData[chartData.length - 2];
+    try {
+      const price = parseFloat(lastPriceStr.replace('$', '').replace(',', ''));
+      return isNaN(price) ? 'N/A' : price.toFixed(2);
+    } catch (e) {
+      return 'N/A';
+    }
+  };
   // Function to Add Item to Collection (Backend API)
   const addToCollection = async (item) => {
     try {
@@ -277,7 +291,8 @@ const LibraryPage = () => {
   
     // Price range filter
     filteredItems = filteredItems.filter((item) => {
-      const price = parseFloat(item.price_at_tcg) || 0;
+      const price = parseFloat(getLatestPriceFromChartData(item.chart_data)) || 0;
+
       return price >= priceRange[0] && price <= priceRange[1];
     });
   
@@ -287,7 +302,7 @@ const LibraryPage = () => {
   // Advanced filters
   // Price range filter
   filteredItems = filteredItems.filter((item) => {
-    const price = parseFloat(item.price_at_tcg) || 0;
+    const price = parseFloat(getLatestPriceFromChartData(item.chart_data)) || 0;
     return price >= priceRange[0] && price <= priceRange[1];
   });
 
@@ -338,8 +353,10 @@ const LibraryPage = () => {
       const bIndex = b.card_number || 0;
       return sortDirection === "asc" ? aIndex - bIndex : bIndex - aIndex;
     } else if (sortOption === "Price") {
-      const aPrice = parseFloat(a.price_at_tcg) || 0;
-      const bPrice = parseFloat(b.price_at_tcg) || 0;
+      // Sorting logic
+      const aPrice = parseFloat(getLatestPriceFromChartData(a.chart_data)) || 0;
+      const bPrice = parseFloat(getLatestPriceFromChartData(b.chart_data)) || 0;
+
       return sortDirection === "asc" ? aPrice - bPrice : bPrice - aPrice;
     } else if (sortOption === "Name") {
       return sortDirection === "asc" 
@@ -377,7 +394,12 @@ const LibraryPage = () => {
   };
 
   // Find maximum price for price range input
-  const maxPrice = Math.max(...libraryData.map(item => parseFloat(item.price_at_tcg) || 0), 100);
+  // Max price for slider
+  const maxPrice = Math.max(
+    ...libraryData.map(item => parseFloat(getLatestPriceFromChartData(item.chart_data)) || 0),
+    100
+  );
+
 
   return (
     <div className="min-h-screen bg-gray-100 text-gray-900">
@@ -566,7 +588,7 @@ const LibraryPage = () => {
               </div>
               
               {/* Rarity Filter */}
-              <div className="bg-white p-4 rounded-lg shadow-sm">
+              {/* <div className="bg-white p-4 rounded-lg shadow-sm">
                 <h4 className="font-medium text-gray-700 mb-2">Rarity</h4>
                 <div className="flex flex-wrap gap-2">
                   {availableRarities.map((rarity) => (
@@ -584,7 +606,7 @@ const LibraryPage = () => {
                     </div>
                   ))}
                 </div>
-              </div>
+              </div> */}
               
               {/* Card Sets Filter */}
               <div className="bg-white p-4 rounded-lg shadow-sm">
@@ -874,7 +896,8 @@ const LibraryPage = () => {
                     : "bg-blue-500"
                 }`}
               ></span>
-              <span className="text-white text-xs">${item.price_at_tcg}</span>
+              <span className="text-white text-xs">${getLatestPriceFromChartData(item.chart_data)}</span>
+
             </div>
           </div>
         </Link>

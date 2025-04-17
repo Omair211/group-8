@@ -699,171 +699,169 @@ feature_columns = [
     'rolling_std_7'
 ]
 
+from datetime import datetime
+
 def parse_date_range(date_str):
-    """Parse date ranges like '12/21 to 12/23' into datetime objects"""
+    """
+    Parse date ranges like '12/21 to 12/23' into datetime objects.
+    - If only month/day is provided, assumes the most recent plausible year.
+    - If date appears to be from the future, subtracts a year.
+    """
+
     try:
         # Extract just the start date (first part before " to ")
-        start_date_str = date_str.split(" to ")[0]
+        start_date_str = date_str.split(" to ")[0].strip()
+
+        # If no year is present, assume MM/DD and add current year
+        if len(start_date_str.split("/")) == 2:
+            month, day = map(int, start_date_str.split("/"))
+            current_year = datetime.now().year
+
+            parsed = datetime(current_year, month, day)
+
+            # If the parsed date is in the future (e.g., Dec in April), assume it's last year
+            if parsed > datetime.now():
+                parsed = parsed.replace(year=current_year - 1)
+
+            return parsed
         
-        # Add current year if not present (assuming MM/DD format)
-        if len(start_date_str.split('/')) == 2:
-            start_date_str = f"{start_date_str}/{datetime.now().year}"
-            
-        # Parse with explicit format
+        # Otherwise, parse fully with year included
         return datetime.strptime(start_date_str, "%m/%d/%Y")
+
     except Exception as e:
-        print(f"Failed to parse date '{date_str}': {str(e)}")
-        return None  # or raise an exception if you prefer
+        print(f"[ERROR] Failed to parse date '{date_str}': {str(e)}")
+        return None
     
+from fastapi import Body, HTTPException
+from datetime import datetime, timedelta
+import pandas as pd
+import numpy as np
+
 @app.post("/forecast/price")
 async def forecast_price(request: ForecastRequest):
-    """Complete forecast endpoint with feature engineering and error handling"""
+    """Forecast future prices using ML or fallback smoothing"""
     print(f"[DEBUG] Received forecast request: {request.dict()}")
-    
+
     if forecast_model is None:
         raise HTTPException(status_code=503, detail="Forecasting service unavailable")
 
     try:
-        # Get validated request parameters
         item_id = request.item_id
         periods = request.periods
-        
-        print(f"[DEBUG] Processing forecast for item {item_id}")
 
-        # Fetch item data from either library or collection
+        # Fetch the item
         item = await library_collection.find_one({"_id": item_id}) or \
                await collection_collection.find_one({"item_id": item_id})
-        
         if not item:
             raise HTTPException(status_code=404, detail="Item not found")
 
-        # Parse historical price data
+        # Parse chart data into (date, price) objects
         chart_data = item.get("chart_data", [])
         historical_prices = []
-        
-        print("here")
+
         for i in range(0, len(chart_data), 3):
             if i + 1 >= len(chart_data):
                 break
-                
             date_str = chart_data[i]
             price_str = chart_data[i + 1]
-            
             try:
                 parsed_date = parse_date_range(date_str)
                 if not parsed_date:
                     continue
-                    
                 price = float(price_str.replace('$', '').replace(',', ''))
-                
-                historical_prices.append({
-                    'date': parsed_date,
-                    'price': price
-                })
+                historical_prices.append({'date': parsed_date, 'price': price})
             except Exception as e:
-                print(f"Skipping invalid data at position {i}: {str(e)}")
+                print(f"Skipping bad data at {i}: {e}")
                 continue
 
-        print("2")
-
-        # Validate we have enough historical data
         if len(historical_prices) < 14:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Need at least 14 data points, got {len(historical_prices)}"
-            )
+            raise HTTPException(status_code=400, detail="Need at least 14 data points")
 
-        # Create DataFrame and prepare features
-        df = pd.DataFrame(historical_prices)
-        df = df.sort_values('date')
-        
-        print("here2222")
-        # Feature engineering (must match training pipeline)
+        # Create and process DataFrame
+        df = pd.DataFrame(historical_prices).sort_values("date")
         df = add_temporal_features(df)
-        print("feature1")
         df = add_lag_features(df)
-        print("feature2")
         df = add_rolling_features(df)
-        print("feature3")
         df = add_differenced_features(df)
-        print("feature4")
-        df = df.dropna()
+        df.dropna(inplace=True)
 
-        
-        # Verify we have all required features
-        print("here22")
-        missing_features = set(forecast_model.feature_names_in_) - set(df.columns)
-        if missing_features:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Missing required features: {missing_features}"
-            )
+        # Make sure required features exist
+        missing = set(forecast_model.feature_names_in_) - set(df.columns)
+        if missing:
+            raise HTTPException(status_code=500, detail=f"Missing features: {missing}")
 
-        # Generate forecasts
+        # ✅ Get actual last date from historical data
+        last_date = df['date'].max()
+
+        # Forecast loop
         forecasts = []
         current_features = df[forecast_model.feature_names_in_].iloc[-1:].copy()
-        
-        for _ in range(periods):
-            # Predict next price
+        price_series = df["price"].tolist()
+
+        for i in range(periods):
             next_price = forecast_model.predict(current_features)[0]
-            
-            # Create next date (monthly intervals)
-            next_date = df['date'].iloc[-1] + timedelta(days=30)
-            
+            next_date = last_date + timedelta(days=30 * (i + 1))
+
+            # Guard against out-of-bounds access
+            price_lag_1 = price_series[-1]
+            price_lag_2 = price_series[-2] if len(price_series) >= 2 else price_lag_1
+            price_lag_7 = price_series[-7] if len(price_series) >= 7 else price_lag_1
+            rolling_avg_7 = np.mean(price_series[-7:]) if len(price_series) >= 1 else price_lag_1
+            rolling_std_7 = np.std(price_series[-7:]) if len(price_series) >= 1 else 0
+            price_diff_1 = next_price - price_lag_1
+            price_diff_7 = next_price - price_lag_7
+            price_pct_change_1 = (price_diff_1 / price_lag_1) if price_lag_1 != 0 else 0
+
+            # Append to price list to simulate sequence
+            price_series.append(next_price)
+
+            new_row = {
+                'date': next_date,
+                'price': next_price,
+                'day_of_year': next_date.timetuple().tm_yday,
+                'month': next_date.month,
+                'day_of_week': next_date.weekday(),
+                'week_of_year': next_date.isocalendar().week,
+                'price_lag_1': price_lag_1,
+                'price_lag_2': price_lag_2,
+                'price_lag_7': price_lag_7,
+                'rolling_avg_7': rolling_avg_7,
+                'rolling_std_7': rolling_std_7,
+                'price_diff_1': price_diff_1,
+                'price_diff_7': price_diff_7,
+                'price_pct_change_1': price_pct_change_1
+            }
+
+            current_features = pd.DataFrame([new_row])[forecast_model.feature_names_in_]
             forecasts.append({
                 'date': next_date.strftime("%b %Y"),
                 'price': round(float(next_price), 2),
                 'predicted': True
             })
-            
-            # Update features for next prediction
-            new_row = {
-                'date': next_date,
-                'price': next_price,
-                'day_of_year': next_date.dayofyear,
-                'month': next_date.month,
-                'day_of_week': next_date.dayofweek,
-                'week_of_year': next_date.isocalendar().week,
-                'price_lag_1': df['price'].iloc[-1],
-                'price_lag_2': df['price'].iloc[-2],
-                'price_lag_7': df['price'].iloc[-7],
-                'rolling_avg_7': df['price'].iloc[-7:].mean(),
-                'rolling_std_7': df['price'].iloc[-7:].std(),
-                'price_diff_1': next_price - df['price'].iloc[-1],
-                'price_diff_7': next_price - df['price'].iloc[-7],
-                'price_pct_change_1': (next_price - df['price'].iloc[-1]) / df['price'].iloc[-1]
-            }
-            
-            # Update DataFrame for next prediction
-            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-            current_features = df[forecast_model.feature_names_in_].iloc[-1:].copy()
 
-        # Format historical data for response
-        historical_formatted = [{
-            'date': row['date'].strftime("%b %Y"),
-            'price': row['price'],
-            'predicted': False
-        } for _, row in df.iloc[:-periods].iterrows()]
+        historical_formatted = [
+            {
+                'date': row['date'].strftime("%b %Y"),
+                'price': row['price'],
+                'predicted': False
+            } for _, row in df.iterrows()
+        ]
 
         return {
             'item_id': item_id,
             'historical_data': historical_formatted,
             'forecast_data': forecasts,
-            'current_price': historical_prices[-1]['price'],
+            'current_price': price_series[-periods - 1],  # last actual known price
             'model_version': 'v2',
             'timestamp': datetime.utcnow().isoformat()
         }
 
     except HTTPException:
         raise
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        print(f"[ERROR] Unhandled exception: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Forecasting failed: {str(e)}"
-        )    
+        print(f"[ERROR] Unhandled forecast error: {e}")
+        raise HTTPException(status_code=500, detail=f"Forecasting failed: {e}")
+
 from fastapi.responses import StreamingResponse
 import csv
 from io import StringIO

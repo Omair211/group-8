@@ -1,87 +1,59 @@
 import React, { use, useState, useEffect } from 'react';
 import axios from 'axios';
 
-const OpenRouterQA = () => {
+const OpenRouterQA = ({ collectionData, summaryData, cardContext = null, forecastData = null }) => {
+
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
   const [loading, setLoading] = useState(false);
   const [showChat, setShowChat] = useState(false);
-
-
-  const summaryData = {
-    unique: 12,
-    variants: 24,
-    total: 100,
-    value: 1245.67,
-    currentCard: {
-      title: "Pikachu V",
-      price: 12.34,
-      category: "Electric",
-      description: "A popular electric-type Pokémon card.",
-      rarity: "Rare Holo"
-    }
-  };
-
-  const collectionData = [
-    { title: "Charizard", count: 2, price_at_tcg: 45.00 },
-    { title: "Bulbasaur", count: 5, price_at_tcg: 3.25 },
-    { title: "Mewtwo", count: 1, price_at_tcg: 78.50 }
-  ];
-
-  const cardContext = {
-    priceHistory: "Price started at $5.00 and is currently $12.34, with a 146.8% increase.",
-    priceForecast: "Expected to increase over the next 3 months with 92% confidence. Estimated price: $15.00.",
-    similarCards: ["Raichu V", "Zapdos"]
-  };
-
 
   useEffect(() => {
     console.log("Collection Data:", collectionData);
     console.log("Summary Data:", summaryData);
     console.log("Card Context:", cardContext);
   },[]);
-
-  //This useEffect runs once when the component loads (because of the empty [] dependency array). 
-  // It logs three variables to the console:
-
-//collectionData
-
-//summaryData
-
-//cardContext
-
-
-
   // Prepare context from collection data and card context if available
   const prepareContext = () => {
     // Format collection summary data
+    
     const summaryContext = `
     Collection Summary:
     - ${summaryData.unique} unique boosters
     - ${summaryData.variants} unique variants
     - ${summaryData.total} total boosters
-    - Total market value: $${summaryData.value.toFixed(2)}
+    - Total market value: $${summaryData.value}
 
     `;
 
+    const getLatestPriceFromChartData = (chartData) => {
+      if (!chartData || !Array.isArray(chartData) || chartData.length < 3) {
+        return 'N/A';
+      }
+      
+      // The last price is at position length-2 (since data is in date,price,volume triples)
+      const lastPriceStr = chartData[chartData.length - 2];
+      try {
+        const price = parseFloat(lastPriceStr.replace('$', '').replace(',', ''));
+        return isNaN(price) ? 'N/A' : price.toFixed(2);
+      } catch (e) {
+        return 'N/A';
+      }
+    };
     // Format collection items data
     const collectionItemsContext = collectionData.map(item => {
-      const price = item.price_at_tcg || 0;
+      let price = getLatestPriceFromChartData(item.chartData);
+
+      if (typeof price !== "number") {
+        try {
+          price = parseFloat(String(price).replace("$", ""));
+        } catch (e) {
+          price = 0;
+        }
+      }
       const value = price * item.count;
-      return `- ${item.title}: ${item.count} cards, $${price.toFixed(2)} each, total value $${value.toFixed(2)}`;
+      return `- ${item.title}: ${item.count} cards, $${price} each, total value $${value}`;
     }).join('\n');
-
-    //It creates a summary of the user's Pokémon cards with quantity,
-    //  price, and total value for each item.
-
-
-
-
-
-
-
-
-
 
     // Add current card context if available
     let currentCardContext = '';
@@ -89,15 +61,22 @@ const OpenRouterQA = () => {
       currentCardContext = `
 Currently Viewing Card:
 - Name: ${summaryData.currentCard.title}
-- Price: $${summaryData.currentCard.price.toFixed(2)}
+- Price: $${summaryData.currentCard.price}
 - Category: ${summaryData.currentCard.category}
 ${summaryData.currentCard.description ? `- Description: ${summaryData.currentCard.description}` : ''}
 ${cardContext.priceHistory ? `- Price History: ${cardContext.priceHistory}` : ''}
 ${cardContext.priceForecast ? `- Price Forecast: ${cardContext.priceForecast}` : ''}
 `;
     }
+    let forecastInsight = '';
 
-    return `${summaryContext}${currentCardContext ? '\n\nCurrent Card Details:' + currentCardContext : ''}\n\nCollection Details:\n${collectionItemsContext}`;
+    if (forecastData && forecastData.forecast_data?.length > 0) {
+      const forecasts = forecastData.forecast_data.map(d => `${d.date}: $${parseFloat(d.price).toFixed(2)}`).join('\n');
+      forecastInsight = `\n\nPrice Forecast:\n${forecasts}`;
+    }
+    
+    return `${summaryContext}${currentCardContext ? '\n\nCurrent Card Details:' + currentCardContext : ''}\n\nCollection Details:\n${collectionItemsContext}${forecastInsight}`;
+    
   };
 
   const askQuestion = async () => {
@@ -107,17 +86,6 @@ ${cardContext.priceForecast ? `- Price Forecast: ${cardContext.priceForecast}` :
     setAnswer('');
     setQuestion('');
     
-    //It checks the question, then clears input, shows loading,
-    //  and gets the chatbot’s answer.
-
-
-
-
-
-
-
-
-
     try {
       const context = prepareContext();
       
@@ -141,7 +109,7 @@ ${context}
 Respond concisely and accurately based only on the data provided. If you cannot answer based on the provided information, say so.`;
       
       const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-        model: "deepseek/deepseek-r1-distill-qwen-14b:free",
+        model: "google/gemini-2.0-flash-thinking-exp:free",
         messages: [
           {
             role: "system",
@@ -155,15 +123,12 @@ Respond concisely and accurately based only on the data provided. If you cannot 
       }, {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer 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`,
+          'Authorization': `Bearer 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`,
           'HTTP-Referer': window.location.origin,
           'X-Title': 'PACKCast Pokémon Collection'
         }
       });
-      //This uses the Deepseek free model (deepseek-r1-distill-qwen-14b:free)
-      //  from OpenRouter to answer the user's question.
-      //  It's a free AI model suitable for chatbot responses.
-
+      
       setAnswer(response.data.choices[0].message.content);
     } catch (error) {
       console.error("Error querying OpenRouter API:", error);
@@ -173,11 +138,6 @@ Respond concisely and accurately based only on the data provided. If you cannot 
     }
   };
 
-  //It sets the chatbot’s answer from the API response.
-  //  If there’s an error, it shows a friendly error message.
-  //  Finally, it stops the loading state.
-
-  
   // Get a contextual placeholder based on whether we're viewing a card
   const getPlaceholder = () => {
     if (cardContext && summaryData.currentCard) {

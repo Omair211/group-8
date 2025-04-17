@@ -93,7 +93,7 @@ const PokemonCardDetail = () => {
         count: count > 0 ? count : 1,
       };
 
-      await axios.post("http://localhost:8001/collection/add", payload);
+      await axios.post("http://localhost:8001/collection/add", id);
       alert('Added to collection successfully!');
       await fetchCollectionData();
     } catch (err) {
@@ -381,10 +381,12 @@ const PokemonCardDetail = () => {
 
       {/* Integrate OpenRouterQA component */}
       <OpenRouterQA 
-        collectionData={cardCollection} 
-        summaryData={prepareCardSummary()}
-        cardContext={prepareCardContext()}
-      />
+  collectionData={cardCollection} 
+  summaryData={prepareCardSummary()}
+  cardContext={prepareCardContext()}
+  forecastData={forecastData}
+/>
+
 
       {/* Footer */}
       <footer className="bg-gray-800 text-white py-8 mt-12">
