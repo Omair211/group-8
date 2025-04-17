@@ -5,7 +5,7 @@ PACKCast is a full-stack web app that helps users manage, analyze, and forecast 
 
 ---
 
-## 📦 Prerequisites
+## Prerequisites
 
 Ensure the following are installed on your system:
 
@@ -16,7 +16,7 @@ Ensure the following are installed on your system:
 
 ---
 
-## 🗃️ MongoDB Setup
+## 🗃MongoDB Setup
 
 1. Open **MongoDB Compass**.
 2. Create a new **database** called:
@@ -33,7 +33,7 @@ Ensure the following are installed on your system:
    - `wishlist`
 
 4. Download and import data into these collections from this Google Drive folder:  
-   🔗 [Collection Files – Google Drive](https://drive.google.com/drive/folders/1kSrn-hFedzV9V6ylm44j7U0trbuL1H8x?usp=sharing)
+   [Collection Files – Google Drive](https://drive.google.com/drive/folders/1kSrn-hFedzV9V6ylm44j7U0trbuL1H8x?usp=sharing)
 
    You'll find `.json` or `.bson` files that should be loaded into:
    - `pokemon_db.user_collection`
@@ -44,16 +44,16 @@ Ensure the following are installed on your system:
 
 ---
 
-## 🤖 Machine Learning Model Setup
+## Machine Learning Model Setup
 
 1. Download the trained model from this link:  
-   🔗 [Download Model](https://drive.google.com/file/d/1C69lH-xzGnrZj8SQhIP00zlGg1IXLdfi/view?usp=sharing)
+   [Download Model](https://drive.google.com/file/d/1C69lH-xzGnrZj8SQhIP00zlGg1IXLdfi/view?usp=sharing)
 
 2. Place the downloaded model file into the `backend/` folder of the project.
 
 ---
 
-## 🔧 Backend Setup (Python + FastAPI)
+## Backend Setup (Python + FastAPI)
 
 1. Clone the repository and navigate into it:
 
@@ -82,42 +82,35 @@ Ensure the following are installed on your system:
    ```
 
    The backend will run at:  
-   📍 `http://localhost:8001`
+   `http://localhost:8001`
 
 ---
 
-## 🌐 Frontend Setup (React + Vite)
+## Frontend Setup (React + Vite)
 
-1. Navigate to the frontend folder (if applicable):
-
-   ```bash
-   cd frontend  # or wherever the frontend is located
-   ```
-
-2. Install frontend dependencies:
+1. Install frontend dependencies:
 
    ```bash
    npm install
    ```
-
-3. Install required libraries:
+2. Install required libraries:
 
    ```bash
    npm install react-router-dom axios recharts lucide-react react-chartjs-2 chart.js
    ```
 
-4. Start the React app:
+3. Start the React app:
 
    ```bash
    npm run dev
    ```
 
    The app should open at:  
-   📍 `http://localhost:5173`
+   `http://localhost:5173`
 
 ---
 
-## 🔐 OpenRouter AI Integration
+## OpenRouter AI Integration
 
 1. Create a free account at **https://openrouter.ai**.
 2. Get your **API key**.
@@ -138,13 +131,12 @@ Ensure the following are installed on your system:
 
 ---
 
-## 🧪 Final Checks
+## Final Checks
 
-✅ MongoDB running  
-✅ Backend running on `localhost:8001`  
-✅ Frontend running on `localhost:5173`  
-✅ OpenRouter API key added  
-✅ ML model downloaded and placed in `/backend`  
-✅ Collections loaded from Google Drive  
-
+MongoDB running  
+Backend running on `localhost:8001`  
+Frontend running on `localhost:5173`  
+OpenRouter API key added  
+ML model downloaded and placed in `/backend`  
+Collections loaded from Google Drive  
 ```
