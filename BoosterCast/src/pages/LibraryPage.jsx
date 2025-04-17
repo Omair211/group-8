@@ -21,24 +21,24 @@ const LibraryPage = () => {
   const [refresh, setRefresh] = useState(false); // Dummy state to trigger re-render
 
   const performSemanticSearch = async () => {
-    if (!searchTerm.trim()) {
-      filteredItems = [...libraryData]; // Reset to all items if search term is empty
-      setRefresh((prev) => !prev); // Trigger re-render
-      return;
-    }
+    // if (!searchTerm.trim()) {
+    //   filteredItems = [...libraryData]; // Reset to all items if search term is empty
+    //   setRefresh((prev) => !prev); // Trigger re-render
+    //   return;
+    // }
   
-    try {
-      const response = await axios.post("http://localhost:8001/search/boosters", {
-        query: searchTerm,
-        limit: itemsPerPage,
-      });
-      filteredItems = response.data.results; // Update filteredItems with semantic results
-      setRefresh((prev) => !prev); // Trigger re-render
-    } catch (error) {
-      console.error("Error performing semantic search:", error);
-      filteredItems = []; // Clear results on error
-      setRefresh((prev) => !prev); // Trigger re-render
-    }
+    // try {
+    //   const response = await axios.post("http://localhost:8001/search/boosters", {
+    //     query: searchTerm,
+    //     limit: itemsPerPage,
+    //   });
+    //   filteredItems = response.data.results; // Update filteredItems with semantic results
+    //   setRefresh((prev) => !prev); // Trigger re-render
+    // } catch (error) {
+    //   console.error("Error performing semantic search:", error);
+    //   filteredItems = []; // Clear results on error
+    //   setRefresh((prev) => !prev); // Trigger re-render
+    // }
   };
   // Advanced filtering state
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
@@ -52,6 +52,7 @@ const LibraryPage = () => {
   const [availableCategories, setAvailableCategories] = useState([]);
   const [isNew, setIsNew] = useState(false);
   const [hasPromo, setHasPromo] = useState(false);
+  const [filteredItems, setFilteredItems] = useState([]); // Store filtered items
 
   useEffect(() => {
     if (isSemanticSearch) {
@@ -276,100 +277,96 @@ const LibraryPage = () => {
     });
   };
 
-  // Filter & Sort Data
-  let filteredItems = isSemanticSearch ? semanticResults : [...libraryData];
-
-  if (!isSemanticSearch) {
-    // Apply advanced filters (price, rarity, etc.) only for non-semantic search
-    if (filterOption === "In collection") {
-      filteredItems = filteredItems.filter((item) => collection[item._id]);
-    } else if (filterOption === "Not in collection") {
-      filteredItems = filteredItems.filter((item) => !collection[item._id]);
-    } else if (filterOption === "In wishlist") {
-      filteredItems = filteredItems.filter((item) => collection[item._id]?.liked);
+  useEffect(() => {
+    let filtered = isSemanticSearch ? [...semanticResults] : [...libraryData];
+  
+    if (!isSemanticSearch) {
+      if (filterOption === "In collection") {
+        filtered = filtered.filter((item) => collection[item._id]);
+      } else if (filterOption === "Not in collection") {
+        filtered = filtered.filter((item) => !collection[item._id]);
+      } else if (filterOption === "In wishlist") {
+        filtered = filtered.filter((item) => collection[item._id]?.liked);
+      }
+  
+      // Price filter
+      filtered = filtered.filter((item) => {
+        const price = parseFloat(getLatestPriceFromChartData(item.chart_data)) || 0;
+        return price >= priceRange[0] && price <= priceRange[1];
+      });
+  
+      if (selectedRarities.length > 0) {
+        filtered = filtered.filter((item) => selectedRarities.includes(item.rarity));
+      }
+  
+      if (selectedSets.length > 0) {
+        filtered = filtered.filter((item) => selectedSets.includes(item.set_name));
+      }
+  
+      if (selectedCategories.length > 0) {
+        filtered = filtered.filter((item) => selectedCategories.includes(item.category));
+      }
+  
+      if (isNew) {
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  
+        filtered = filtered.filter((item) => {
+          if (!item.release_date) return false;
+          const releaseDate = new Date(item.release_date);
+          return releaseDate >= thirtyDaysAgo;
+        });
+      }
+  
+      if (hasPromo) {
+        filtered = filtered.filter((item) =>
+          item.is_promo === true ||
+          (item.title && item.title.toLowerCase().includes("promo"))
+        );
+      }
     }
   
-    // Price range filter
-    filteredItems = filteredItems.filter((item) => {
-      const price = parseFloat(getLatestPriceFromChartData(item.chart_data)) || 0;
-
-      return price >= priceRange[0] && price <= priceRange[1];
+    // Sorting
+    filtered.sort((a, b) => {
+      if (sortOption === "Card number") {
+        const aIndex = a.card_number || 0;
+        const bIndex = b.card_number || 0;
+        return sortDirection === "asc" ? aIndex - bIndex : bIndex - aIndex;
+      } else if (sortOption === "Price") {
+        const aPrice = parseFloat(getLatestPriceFromChartData(a.chart_data)) || 0;
+        const bPrice = parseFloat(getLatestPriceFromChartData(b.chart_data)) || 0;
+        return sortDirection === "asc" ? aPrice - bPrice : bPrice - aPrice;
+      } else if (sortOption === "Name") {
+        return sortDirection === "asc"
+          ? (a.title || "").localeCompare(b.title || "")
+          : (b.title || "").localeCompare(a.title || "");
+      } else if (sortOption === "Rarity") {
+        const rarityOrder = { "Common": 1, "Uncommon": 2, "Rare": 3, "Ultra Rare": 4, "Secret Rare": 5 };
+        const aRarity = rarityOrder[a.rarity] || 0;
+        const bRarity = rarityOrder[b.rarity] || 0;
+        return sortDirection === "asc" ? aRarity - bRarity : bRarity - aRarity;
+      }
+      return 0;
     });
   
-    // Rarity, set, category, etc. filters...
-  }
-
-  // Advanced filters
-  // Price range filter
-  filteredItems = filteredItems.filter((item) => {
-    const price = parseFloat(getLatestPriceFromChartData(item.chart_data)) || 0;
-    return price >= priceRange[0] && price <= priceRange[1];
-  });
-
-  // Rarity filter
-  if (selectedRarities.length > 0) {
-    filteredItems = filteredItems.filter((item) => 
-      selectedRarities.includes(item.rarity)
-    );
-  }
-
-  // Set filter
-  if (selectedSets.length > 0) {
-    filteredItems = filteredItems.filter((item) => 
-      selectedSets.includes(item.set_name)
-    );
-  }
-
-  // Category filter
-  if (selectedCategories.length > 0) {
-    filteredItems = filteredItems.filter((item) => 
-      selectedCategories.includes(item.category)
-    );
-  }
-
-  // New items filter (assuming items have a release_date field)
-  if (isNew) {
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
-    filteredItems = filteredItems.filter((item) => {
-      if (!item.release_date) return false;
-      const releaseDate = new Date(item.release_date);
-      return releaseDate >= thirtyDaysAgo;
-    });
-  }
-
-  // Promo items filter
-  if (hasPromo) {
-    filteredItems = filteredItems.filter((item) => 
-      item.is_promo === true || (item.title && item.title.toLowerCase().includes("promo"))
-    );
-  }
-
-  // Sort items
-  filteredItems.sort((a, b) => {
-    if (sortOption === "Card number") {
-      const aIndex = a.card_number || 0;
-      const bIndex = b.card_number || 0;
-      return sortDirection === "asc" ? aIndex - bIndex : bIndex - aIndex;
-    } else if (sortOption === "Price") {
-      // Sorting logic
-      const aPrice = parseFloat(getLatestPriceFromChartData(a.chart_data)) || 0;
-      const bPrice = parseFloat(getLatestPriceFromChartData(b.chart_data)) || 0;
-
-      return sortDirection === "asc" ? aPrice - bPrice : bPrice - aPrice;
-    } else if (sortOption === "Name") {
-      return sortDirection === "asc" 
-        ? (a.title || "").localeCompare(b.title || "") 
-        : (b.title || "").localeCompare(a.title || "");
-    } else if (sortOption === "Rarity") {
-      const rarityOrder = { "Common": 1, "Uncommon": 2, "Rare": 3, "Ultra Rare": 4, "Secret Rare": 5 };
-      const aRarity = rarityOrder[a.rarity] || 0;
-      const bRarity = rarityOrder[b.rarity] || 0;
-      return sortDirection === "asc" ? aRarity - bRarity : bRarity - aRarity;
-    }
-    return 0;
-  });
+    setFilteredItems(filtered);
+  }, [
+    isSemanticSearch,
+    semanticResults,
+    libraryData,
+    filterOption,
+    collection,
+    wishlist,
+    priceRange,
+    selectedRarities,
+    selectedSets,
+    selectedCategories,
+    isNew,
+    hasPromo,
+    sortOption,
+    sortDirection,
+  ]);
+  
 
   // Pagination Logic
   const indexOfLastItem = currentPage * itemsPerPage;
@@ -457,6 +454,7 @@ const LibraryPage = () => {
         const results = libraryData.filter((item) =>
           item.title?.toLowerCase().includes(searchTerm.toLowerCase())
         );
+        console.log(searchTerm, "result",results)
         setFilteredItems(results);
       }
     }

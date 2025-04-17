@@ -123,7 +123,7 @@ Respond concisely and accurately based only on the data provided. If you cannot 
       }, {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer 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`,
+          'Authorization': `Bearer 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`,
           'HTTP-Referer': window.location.origin,
           'X-Title': 'PACKCast Pokémon Collection'
         }
